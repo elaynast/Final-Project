@@ -1,0 +1,189 @@
+---
+title: "CDC Child Lead Levels"
+author: "Elayna Saint Amour"
+date: "December 13, 2021"
+output: ioslides_presentation
+widescreen: true
+runtime: shiny
+---
+```{r setup, include=FALSE,message=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+```
+
+```{r Loading data and fixing it for apps, include=FALSE}
+library(readxl)
+library(dplyr)
+library(shiny)
+library(stringr)
+library(tidyverse)
+library(DT)
+MI_2012 <- read_excel("~/STA_518/Preparations/Presentation/data/MI_CountyLevelSummary_2012.xlsx")
+MI_2013 <- read_excel("~/STA_518/Preparations/Presentation/data/MI_CountyLevelSummary_2013.xlsx")
+MI_2014 <- read_excel("~/STA_518/Preparations/Presentation/data/MI_CountyLevelSummary_2014.xlsx")
+MI_2015 <- read_excel("~/STA_518/Preparations/Presentation/data/MI_CountyLevelSummary_2015.xlsx")
+MI_2016 <- read_excel("~/STA_518/Preparations/Presentation/data/MI_CountyLevelSummary_2016.xlsx")
+#Combined data into one master data set called Total
+Total <- bind_rows(MI_2012, MI_2013, MI_2014, MI_2015, MI_2016)
+Total <- Total %>% 
+    mutate(proportion =  Confirmed/Tested) %>% 
+    mutate(percent =  100*proportion) %>% 
+    mutate(percent = round(percent,3)) %>% 
+#turned subregion into all lower case and removed the word county to match michigan_county data set
+    mutate(subregion=tolower(str_replace(subregion, " County","")))%>% 
+#I made new variables that capitalized the subregion so the user will see it each county as a capital (ex: Kent)
+    mutate(capsubregion1= str_to_title(subregion)) %>% 
+    mutate(capsubregion2= str_to_title(subregion))
+#Imported map data of the United states
+usa <- map_data('usa')
+state <- map_data("state")
+#subsetting information to from US data to include only michigan and its counties
+michigan <- subset(state, region=="michigan")
+counties <- map_data("county")
+michigan_county <- subset(counties, region=="michigan")
+```
+
+## About the Data
+-This data was collected by the CDC from 2012-2016.
+
+-Data is for children under the age 16 from Michigan divided by county.
+
+-The variable of interest is the proportion of children with lead levels over 5µg/dL.
+
+## Interactive Map
+
+```{r maps of counties}
+knitr::include_app("https://rstudio.gvsu.edu/s/c8e00cfc78a314348f306/p/d0d2c012/")
+   
+```
+
+
+## Comparing Counties Over Time
+
+```{r linegraph}
+#https://rstudio.github.io/DT/
+fluidPage(
+
+
+        mainPanel(
+
+            textInput(inputId = "subregion1",
+                        label = "Input county of interest:",
+                        value= "Kent"),
+
+            textInput(inputId = "subregion2",
+                      label = "Input county of interest:",
+                      value= "Ottawa"),
+
+            plotOutput(outputId = "linegraph")
+        )
+    )
+
+# Define server ----------------------------------------------------------------
+
+    renderPlot({
+      output$linegraph <- renderPlot({
+                a <- subset(Total,capsubregion1==input$subregion1)
+                b <- subset(Total,capsubregion2==input$subregion2)
+                ggplot() +
+                    geom_line(a,mapping=aes(x=Year, y=Proportion), color="red") +
+                    geom_line(b,mapping=aes(x=Year, y=Proportion), color="blue")
+
+
+    })
+    })
+
+```
+
+## Flint Water Crisis
+-Starting in 2014 government officials made the decision to switch water sources from the the Detroit River to the Flint River. 
+
+
+-Starting in September 2015 doctors reveal they’ve found high levels of lead in Flint children’s bloodstreams and advised Flint to stop using the Flint River as a water system.
+
+-According to Consumer Notice "Nearly 9,000 children were supplied lead-contaminated water for 18 months."
+
+-October 2016 Flint begins using the Detroit River again
+
+
+
+
+
+## Results Between Counties
+-Genesee could not be compared to most of its neighboring counties.
+
+-i.e. Lapeer Oakland and Tuscola.
+
+-Genesee was significantly **higher** Saginaw in 2016 at a 95% confidence level.
+
+```{r 2 prop z tests, include=FALSE}
+#This function takes two counties from the same year and tests for differences in proportions
+countyproptest <- function(county1, county2, year){
+  pairwise_cases <- Total %>%
+    select(subregion, Confirmed, Tested,Year) %>%
+    filter(Year == {{year}},
+           subregion %in% c({{county1}},{{county2}}))
+
+  prop.test(x = pairwise_cases$Confirmed, 
+            n = pairwise_cases$Tested,
+            alternative = c("two.sided"),
+            conf.level = 0.95, correct = TRUE)}
+#lapeer had zero cases
+#oakland, tuscola did not pass conditions
+countyproptest("genesee", "saginaw", 2016)
+
+#This function takes a county and tests for differences in proportions between years
+yearproptest <- function(county, year1,year2){
+  pairwise_years <-  Total %>% 
+    select(subregion,Confirmed, Tested,Year) %>% 
+    filter(subregion %in% {{county}},
+           Year %in% c({{year1}}, {{year2}}))
+  
+  
+  prop.test(x=pairwise_years$Confirmed,
+            n=pairwise_years$Tested,
+            alternative = c("two.sided"),
+            conf.level = 0.95, correct = TRUE)}
+yearproptest("genesee", 2012, 2016)
+yearproptest("genesee", 2012, 2014)
+yearproptest("genesee", 2012, 2013)
+
+```
+
+
+```{r county tibble}
+countylist <- c("Genesee","Saginaw")
+countypropestimates <- c(0.015,0.008)
+tibble(countylist,countypropestimates)
+```
+
+## Results Between Years
+
+-2013 had significantly **lower** levels than all other years.
+
+-2012 had significantly **higher** levels than 2014.
+```{r year tibble}
+yearlist <- c(2012,2014)
+yearpropestimates <- c(0.017, 0.012)
+tibble(yearlist,yearpropestimates)
+```
+
+## Limitations
+-Data only spanned from 2012-2016.
+
+-Flint's conditions weren't even considered an emergency until 2016 and wasn't declared safe to drink again until 2019.
+
+-Possible limited access to lead testing.
+
+-CDC changed elevated standard to 3.5 µg/dL.
+
+## Links to Sources
+https://rstudio.github.io/DT/
+
+https://jtr13.github.io/cc19/different-ways-of-plotting-u-s-map-in-r.html
+
+https://ggplot2-book.org/maps.html
+
+https://www.consumernotice.org/environmental/water-contamination/flint-michigan/
+
+Data: https://www.cdc.gov/nceh/lead/data/state/midata.htm
